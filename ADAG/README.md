@@ -10,6 +10,11 @@ Lagrangian method, so no
 ground-truth graphs are needed. Once trained, inference on a new domain is a single forward
 pass (about a millisecond), with no per-domain optimisation.
 
+<p align="center">
+  <img src="assets/adag_pipeline.png" alt="ADAG pipeline: multi-domain training of the attention model and zero-shot DAG inference" width="100%">
+</p>
+<p align="center"><em>Training on many domains learns one map from observations to the domain's weighted adjacency matrix (linear SEMs) or first-layer weights (nonlinear SEMs); a trained model infers the DAG of a new domain in one forward pass.</em></p>
+
 This repository contains the reference implementation of
 
 > **Attention-Based Pretraining for Unsupervised Amortized Causal Discovery**
@@ -36,6 +41,7 @@ provided. The checkpoints used in the paper are released on Hugging Face at
 | `run_baselines.py` | ADAG vs. NOTEARS, DAGMA (and optionally AVICI) on identical data, with a comparison table |
 | `demo/` | Trained `d = 5` ADAG model, the matching dataset, the comparison it produces, and `run_demo.sh` |
 | `environment.yml`, `requirements.txt` | Conda environment and pip requirements |
+| `assets/` | Figures used in this README |
 
 ## Installation
 
