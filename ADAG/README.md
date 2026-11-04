@@ -4,7 +4,7 @@ ADAG (Attention-DAG) is a linear-transformer model for *amortized* causal discov
 Given observations from many domains that follow linear structural equation models (SEMs)
 $X = A^\top X + E$, it learns one nonlinear map $A = g(X;\Theta)$ from the observations of
 a domain to that domain's weighted adjacency matrix. Training is **unsupervised**: the
-model minimises the reconstruction error $\|X - A(X)^\top X\|_F^2$ over all training
+model minimises the reconstruction error $`\| X - A(X)^{\top} X \|_F^2`$ over all training
 domains under an acyclicity constraint on every $A(X)$, enforced with the augmented
 Lagrangian method, so no
 ground-truth graphs are needed. Once trained, inference on a new domain is a single forward
@@ -89,7 +89,7 @@ python evaluate_adag.py --ckpt demo/checkpoints/adag_d5_n1000.ckpt \
 
 `bash demo/run_demo.sh` evaluates the model zero-shot, runs NOTEARS and DAGMA on the
 *same* 1000 test domains, and prints the comparison. Results on the 1000 test domains
-(mean ± std, edges thresholded at $|w| \ge 0.3$):
+(mean ± std, edges thresholded at $`|w| \geq 0.3`$):
 
 | Method | SHD ↓ | Edges (5 true) | F1 ↑ | Time / domain ↓ |
 |---|---|---|---|---|
@@ -119,7 +119,7 @@ python generate_data.py --level general      --graph_type ER --s0 4 --d 50 --M 1
 python generate_data.py --level general --d 5 --M 101000 --noise exp     # non-Gaussian noise
 ```
 
-* Graphs are Erdős–Rényi (`ER`) or scale-free (`SF`) with $s_0 \cdot d$ expected edges; edge
+* Graphs are Erdős–Rényi (`ER`) or scale-free (`SF`) with $`s_0 \cdot d`$ expected edges; edge
   weights are drawn from $U(-2, -0.5) \cup U(0.5, 2)$; the SEM noise is Gaussian by default
   (`exp`, `gumbel`, `uniform` are also available). `ER4` with `d = 5` is impossible
   (20 edges on 5 nodes) and is rejected.
@@ -155,16 +155,16 @@ This runs Algorithm 1 of the paper:
 
 The objective over a batch of $B$ domains is
 
-$$
-\mathcal{L}(\Theta) \;=\; \frac{1}{B}\sum_{\eta=1}^{B} \Big[ \tfrac{1}{2n}\,\big\|A(X^\eta)\,X^\eta - X^\eta\big\|_F^2
-\;+\; \alpha\, h\big(A(X^\eta)\big) \;+\; \tfrac{\rho}{2}\, h\big(A(X^\eta)\big)^2
-\;+\; \lambda_1 \big\|A(X^\eta)\big\|_1 \Big],
-\qquad
-h(A) \;=\; \operatorname{tr}\!\Big[\Big(I + \tfrac{A \circ A}{d}\Big)^{d}\Big] - d ,
-$$
+```math
+\mathcal{L}(\Theta) = \frac{1}{B}\sum_{\eta=1}^{B} \left[ \frac{1}{2n} \left\| A(X^{\eta}) X^{\eta} - X^{\eta} \right\|_F^2 + \alpha \, h\!\left(A(X^{\eta})\right) + \frac{\rho}{2} \, h\!\left(A(X^{\eta})\right)^2 + \lambda_1 \left\| A(X^{\eta}) \right\|_1 \right]
+```
+
+```math
+h(A) = \mathrm{tr}\!\left[ \left( I + \frac{A \circ A}{d} \right)^{d} \right] - d
+```
 
 where $h(A) = 0$ if and only if $A$ is acyclic (`--acyclicity logdet` switches to the DAGMA
-form $h(A) = -\log\det(sI - A \circ A) + d \log s$) and $\lambda_1$ is `--lamb_l1`
+form $`h(A) = -\log\det(sI - A \circ A) + d \log s`$) and $`\lambda_1`$ is `--lamb_l1`
 (0.02). No ground-truth graph enters the objective; the
 relative error of `A` that is printed each epoch is for monitoring only.
 
@@ -194,12 +194,11 @@ python train_adag_supervised.py --data_root data --level hetero --s0 1 --d 5 --n
 
 Minimises, against the ground-truth matrices $W^\eta$ of the training domains,
 
-$$
-\mathcal{L}(\Theta) \;=\; \frac{1}{B}\sum_{\eta=1}^{B} \Big[ \frac{\|A(X^\eta)^\top - W^\eta\|_F}{\|W^\eta\|_F}
-\;+\; \lambda_{\mathrm{rec}}\, \tfrac{1}{2n}\,\big\|A(X^\eta)\,X^\eta - X^\eta\big\|_F^2 \Big]
-$$
+```math
+\mathcal{L}(\Theta) = \frac{1}{B}\sum_{\eta=1}^{B} \left[ \frac{ \left\| A(X^{\eta})^{\top} - W^{\eta} \right\|_F }{ \left\| W^{\eta} \right\|_F } + \lambda_{\mathrm{rec}} \, \frac{1}{2n} \left\| A(X^{\eta}) X^{\eta} - X^{\eta} \right\|_F^2 \right]
+```
 
-with $\lambda_{\mathrm{rec}}$ = `--lamb_rec` (1), optionally plus the acyclicity penalty
+with $`\lambda_{\mathrm{rec}}`$ = `--lamb_rec` (1), optionally plus the acyclicity penalty
 (`--alpha --rho`),
 with the same data pipeline, checkpoint names and evaluation as above.
 
@@ -212,7 +211,7 @@ with the same data pipeline, checkpoint names and evaluation as above.
   reconstruction values (the untrained attention output is far from a sparse DAG); they
   shrink by orders of magnitude within the first few thousand optimiser steps. This is
   expected.
-* A trained model is tied to the `n` it was trained with ($W^Q, W^K \in \mathbb{R}^{n \times k}$). To apply it
+* A trained model is tied to the `n` it was trained with ($`W^Q, W^K \in \mathbb{R}^{n \times k}`$). To apply it
   to domains with fewer samples, `evaluate_adag.py --resample_to_n n_available` pads each
   domain to `n` by resampling its observations with replacement (paper, Appendix A).
 * `--resample_noise` draws fresh observations from the same SEMs every epoch instead of a
@@ -235,7 +234,7 @@ python evaluate_adag.py --ckpt checkpoints/<name>.ckpt \
 
 Applies the model once to each of the held-out domains and reports, per domain and on
 average, SHD, number of edges, precision, recall, F1, AUROC and the relative error of the
-weights, at the standard threshold $|w| \ge 0.3$ (`--w_threshold`). The architecture flags
+weights, at the standard threshold $`|w| \geq 0.3`$ (`--w_threshold`). The architecture flags
 must match the checkpoint. Outputs: `A_est_*.npy` (raw estimates), `metrics_*.csv`,
 `summary_*.json`.
 
@@ -255,7 +254,7 @@ probabilities cut at 0.5). `--limit K` tries the first `K` test domains.
 
 * `ADAG.forward(x)` takes `x` of shape `[batch, d, n]` (variables as tokens) and returns
   `(x_hat, A)` with `x_hat = A x`. `A[i, j]` is the weight of `j → i`; every script
-  converts to the NOTEARS / DAGMA convention $W = A^\top$ ($W_{ij} \neq 0 \Leftrightarrow i \to j$) before
+  converts to the NOTEARS / DAGMA convention $`W = A^{\top}`$ ($`W_{ij} \neq 0 \Leftrightarrow i \to j`$) before
   comparing with the ground truth. `ADAG.estimate(x)` returns `W` directly.
 * Checkpoints are plain `state_dict`s loadable with `ADAG.from_checkpoint`. Parameters are
   `fcq` / `fck` (query / key maps), `fcn` (layer norms) and `fcpx` (a per-head output
