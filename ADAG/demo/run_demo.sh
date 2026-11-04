@@ -2,7 +2,7 @@
 # End-to-end demo on the shipped d = 5 heterogeneous dataset and ADAG checkpoint.
 # Run from the repository root:  bash demo/run_demo.sh
 set -e
-CKPT=demo/checkpoints/adag_d5_n1000_general.ckpt
+CKPT=demo/checkpoints/adag_d5_n1000.ckpt
 DATA="--data_root demo/data --level hetero --graph_type ER --s0 1 --d 5 --n 1000"
 
 echo "== 1. zero-shot evaluation of the shipped ADAG model on the 1000 held-out domains"

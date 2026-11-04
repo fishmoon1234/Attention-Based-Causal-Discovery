@@ -1,23 +1,21 @@
 """
-Supervised training of ADAG.
+Supervised training of ADAG (optional variant; the default training is train_adag_alm.py).
 
-This variant uses the ground-truth weighted adjacency matrices of the training domains:
+Uses the ground-truth weighted adjacency matrices of the training domains:
 
     loss = RelErr(A(X), W)  +  lamb_rec * 0.5 ||A(X) X - X||^2 / n
            [+ alpha * h(A) + rho/2 * h(A)^2, both off by default]
 
-It is NOT the method of the paper, which is unsupervised (see train_adag_alm.py); it is
-provided because ground-truth supervision is a natural reference point and makes a
-useful initialisation / ablation. The architecture, data pipeline, checkpoint format and
-evaluation are identical to the unsupervised trainer, so the two are directly comparable.
+Architecture, data pipeline, checkpoint names and evaluation are the same as for
+train_adag_alm.py.
 
   python train_adag_supervised.py --data_root data --level hetero --s0 1 --d 5 --n 1000 \
       --M_train 100000 --epochs 1000
 
 Per epoch, the reconstruction loss, h(A) and the relative error of A are reported on a
-subset of the training domains and on the held-out test domains; the checkpoint with the
-lowest test relative error is kept as  {out_dir}/{name}_supervised.ckpt  (the last epoch
-as {name}_supervised_last.ckpt) and the curves go to {name}_supervised_log.csv.
+subset of the training domains and on the held-out test domains. The model selected by
+--select_by (default: lowest test relative error of A) is saved as {out_dir}/{name}.ckpt,
+the last epoch as {name}_last.ckpt, and the curves go to {name}_log.csv.
 """
 import argparse, os, time
 
@@ -41,6 +39,8 @@ def main():
     g.add_argument("--lamb_rec", type=float, default=1.0, help="weight of the reconstruction loss")
     g.add_argument("--alpha", type=float, default=0.0, help="linear acyclicity penalty (off by default)")
     g.add_argument("--rho", type=float, default=0.0, help="quadratic acyclicity penalty (off by default)")
+    g.add_argument("--select_by", default="rel_error", choices=["rec", "rel_error"],
+                   help="criterion for {name}.ckpt: relative error of A (default) or test reconstruction loss")
     a = p.parse_args()
 
     set_seed(a.seed)
@@ -54,12 +54,12 @@ def main():
     torch.save(model.state_dict(), f"{a.out_dir}/{name}_init.ckpt")
     print(f">> {shard}\n>> device {device}   train domains {len(train_idx)}   test domains {len(test_idx)}")
     print(f">> ADAG r={a.n_heads} k={a.dk} L={a.n_layers} d={a.d} n={a.n}: {count_params(model):,} parameters")
-    print(f">> checkpoints -> {a.out_dir}/{name}_supervised*.ckpt")
+    print(f">> checkpoints -> {a.out_dir}/{name}.ckpt (best test {a.select_by}), {name}_last.ckpt")
 
     h_fn = ACYCLICITY[a.acyclicity]
     rel = RelativeError(reduction="mean")
     opt = torch.optim.Adam(model.parameters(), lr=a.lr, weight_decay=a.weight_decay)
-    log = CSVLogger(f"{a.out_dir}/{name}_supervised_log.csv",
+    log = CSVLogger(f"{a.out_dir}/{name}_log.csv",
                     ["epoch", "time", "lr", "train_rec", "train_h", "train_rel", "test_rec", "test_h", "test_rel"])
     best = float("inf")
     for ep in range(a.epochs):
@@ -82,16 +82,17 @@ def main():
         tr = epoch_eval(model, shard, train_idx, a.n, a.batch_size, h_fn, a.eval_train_domains)
         te = epoch_eval(model, shard, test_idx, a.n, a.batch_size, h_fn)
         dt = time.time() - t0
-        if te["rel"] < best:
-            best = te["rel"]
-            torch.save(model.state_dict(), f"{a.out_dir}/{name}_supervised.ckpt")
-        torch.save(model.state_dict(), f"{a.out_dir}/{name}_supervised_last.ckpt")
+        crit = te["rel"] if a.select_by == "rel_error" else te["rec"]
+        if crit < best:
+            best = crit
+            torch.save(model.state_dict(), f"{a.out_dir}/{name}.ckpt")
+        torch.save(model.state_dict(), f"{a.out_dir}/{name}_last.ckpt")
         log.log(dict(epoch=ep, time=f"{dt:.1f}", lr=f"{lr:.2e}", train_rec=tr["rec"], train_h=tr["h"],
                      train_rel=tr["rel"], test_rec=te["rec"], test_h=te["h"], test_rel=te["rel"]))
         print(f"epoch {ep:4d}/{a.epochs}  {dt:6.1f}s  lr {lr:.1e} | train rec {tr['rec']:.4f} h {tr['h']:.4f} "
               f"relA {tr['rel']:.4f} | test rec {te['rec']:.4f} h {te['h']:.4f} relA {te['rel']:.4f} "
-              f"| best test relA {best:.4f}", flush=True)
-    print(f">> done. best test relative error {best:.4f}  ->  {a.out_dir}/{name}_supervised.ckpt")
+              f"| best test {a.select_by} {best:.4f}", flush=True)
+    print(f">> done. best test {a.select_by} {best:.4f}  ->  {a.out_dir}/{name}.ckpt")
 
 
 if __name__ == "__main__":

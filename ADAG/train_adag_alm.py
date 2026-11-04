@@ -1,6 +1,6 @@
 """
-Unsupervised training of ADAG with the augmented Lagrangian method (the method of the
-paper; Section 3, Eq. 7, and Appendix A, Algorithm 1).
+Training of ADAG with the augmented Lagrangian method (the default training; paper
+Section 3, Eq. 7, and Appendix A, Algorithm 1).
 
 No ground-truth graphs are used. For training domains X^1..X^M the objective is
 
@@ -22,12 +22,13 @@ with h(A) = tr[(I + A∘A/d)^d] - d (= 0 iff A is a DAG). Training has two stage
   python train_adag_alm.py ... --stage alm --init_ckpt checkpoints/<name>_warmup.ckpt   # resume
 
 A single multiplier alpha is shared by all domains (the per-domain multipliers of Eq. 14
-are updated with the batch-mean of h, which is what the released results used).
+are updated with the mean of h over the batch).
 
 Checkpoints in --out_dir:  {name}_init.ckpt (initialisation), {name}_warmup.ckpt (end of
-warm-up), {name}_alm.ckpt (final ALM iterate, what Algorithm 1 returns) and
-{name}_alm_best.ckpt (best by --select_by on the test domains). Ground-truth relative
-error of A is printed for monitoring only; it enters nothing unless --select_by rel_error.
+warm-up), {name}_last.ckpt (final ALM iterate, what Algorithm 1 returns) and {name}.ckpt
+(the iterate selected by --select_by on the test domains). The relative error of A
+against the ground truth is printed for monitoring; it enters nothing unless
+--select_by rel_error.
 """
 import argparse, math, os, time
 
@@ -63,7 +64,7 @@ def train_epochs(model, opt, shard, train_idx, test_idx, a, h_fn, alpha, rho, ep
         crit = te["rel"] if a.select_by == "rel_error" else te["rec"]
         if crit < state["best"]:
             state["best"] = crit
-            torch.save(model.state_dict(), f"{a.out_dir}/{a.name}_{stage}_best.ckpt")
+            torch.save(model.state_dict(), f"{a.out_dir}/{a.name}{'_warmup_best' if stage == 'warmup' else ''}.ckpt")
         dt = time.time() - t0
         log.log(dict(stage=stage, outer=state["outer"], epoch=state["epoch"], time=f"{dt:.1f}", lr=f"{lr:.2e}",
                      alpha=alpha, rho=rho, train_rec=tr["rec"], train_h=tr["h"], train_rel=tr["rel"],
@@ -93,7 +94,7 @@ def main():
     g.add_argument("--inner_epochs", type=int, default=100, help="epochs per outer ALM iteration")
     g.add_argument("--inner_lr", type=float, default=1e-4, help="ALM learning rate (scaled down by log10 rho)")
     g.add_argument("--select_by", default="rec", choices=["rec", "rel_error"],
-                   help="criterion for *_best.ckpt: test reconstruction (unsupervised) or ground-truth error")
+                   help="criterion for {name}.ckpt: test reconstruction loss (default) or relative error of A")
     a = p.parse_args()
 
     set_seed(a.seed)
@@ -111,11 +112,11 @@ def main():
     print(f">> {shard}\n>> device {device}   train domains {len(train_idx)}   test domains {len(test_idx)}")
     print(f">> ADAG r={a.n_heads} k={a.dk} L={a.n_layers} d={a.d} n={a.n}: {count_params(model):,} parameters"
           + (f"   init from {a.init_ckpt}" if a.init_ckpt else ""))
-    print(f">> stage {a.stage}; checkpoints -> {a.out_dir}/{a.name}_*.ckpt")
+    print(f">> stage {a.stage}; checkpoints -> {a.out_dir}/{a.name}.ckpt, {a.name}_last.ckpt")
 
     h_fn = ACYCLICITY[a.acyclicity]
     opt = torch.optim.Adam(model.parameters(), lr=a.lr, weight_decay=a.weight_decay)
-    log = CSVLogger(f"{a.out_dir}/{a.name}_alm_log.csv",
+    log = CSVLogger(f"{a.out_dir}/{a.name}_log.csv",
                     ["stage", "outer", "epoch", "time", "lr", "alpha", "rho", "train_rec", "train_h",
                      "train_rel", "test_rec", "test_h", "test_rel"])
     state = dict(epoch=-1, outer=0, best=float("inf"))
@@ -146,7 +147,7 @@ def main():
                     break
             alpha += rho * h_new
             h_old = h_new
-            torch.save(model.state_dict(), f"{a.out_dir}/{a.name}_alm.ckpt")
+            torch.save(model.state_dict(), f"{a.out_dir}/{a.name}_last.ckpt")
             print(f">> outer {outer} done: mean h(A) = {h_new:.3e}  (alpha -> {alpha:.4g}, rho = {rho:.4g})")
             if h_new <= a.h_tol:
                 print(f">> converged: h < {a.h_tol}")
@@ -154,8 +155,8 @@ def main():
             if rho >= a.rho_max:
                 print(">> stopping: rho reached rho_max")
                 break
-        print(f"********** ALM done -> {a.out_dir}/{a.name}_alm.ckpt (final) and "
-              f"{a.name}_alm_best.ckpt (best test {a.select_by}) **********")
+        print(f"********** ALM done -> {a.out_dir}/{a.name}_last.ckpt (final iterate) and "
+              f"{a.name}.ckpt (best test {a.select_by}) **********")
 
 
 if __name__ == "__main__":
