@@ -1,0 +1,14 @@
+{
+  "M": 101000,
+  "d": 5,
+  "graph_type": "ER",
+  "level": "hetero",
+  "nnz_per_domain": 5,
+  "noise_var": 1.0,
+  "provenance": "converted from dense W_true (exact)",
+  "s0": 1,
+  "seed": 42,
+  "sem": "gauss",
+  "source": "synthetic_dag_data/ER1_d5/W_true_0.npy",
+  "structure": "shared"
+}
