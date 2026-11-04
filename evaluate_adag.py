@@ -6,7 +6,7 @@ estimate is thresholded at |w| >= --w_threshold (0.3, the standard protocol of Z
 al., 2018). Per-domain SHD, number of edges, precision, recall, F1, AUROC and relative
 error of the weights are written to --out_dir, with a JSON summary and the raw estimates.
 
-  python evaluate_adag.py --ckpt demo/checkpoints/adag_d5_n1000_general.ckpt \
+  python evaluate_adag.py --ckpt demo/checkpoints/adag_d5_n1000.ckpt \
       --data_root demo/data --level hetero --s0 1 --d 5 --n 1000
 
 The architecture flags (--n_heads --dk --n_layers --d --n) must match the checkpoint. If

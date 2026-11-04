@@ -10,7 +10,7 @@ the printed table are directly comparable.
   dagma     DAGMA, linear, L2 loss, lambda1 = --lambda1     (pip install dagma)
   avici     AVICI, pretrained 'scm-v0' (edge probabilities, cut at 0.5; no weights)  (pip install avici)
 
-  python run_baselines.py --methods adag notears dagma --ckpt demo/checkpoints/adag_d5_n1000_general.ckpt \
+  python run_baselines.py --methods adag notears dagma --ckpt demo/checkpoints/adag_d5_n1000.ckpt \
       --data_root demo/data --level hetero --s0 1 --d 5 --n 1000
 
 Baselines run on CPU with one process per core (--workers); ADAG runs on the GPU if there

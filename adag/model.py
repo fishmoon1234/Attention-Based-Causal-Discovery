@@ -37,10 +37,9 @@ class ADAG(nn.Module):
     Input:  x of shape [batch, d, n].
     Output: (x_hat [batch, d, n], A [batch, d, d]).
 
-    Parameter names (``fcq``, ``fck``, ``fcn``, ``fcpx``) are kept from the original
-    implementation so that released checkpoints load with ``strict=True``. ``fcpx`` is a
-    legacy per-head d x d projection that the paper's formulation (Eq. 5) does not use;
-    it is still registered so that checkpoint keys match, but it does not enter ``forward``.
+    Parameters: ``fcq`` / ``fck`` (query / key maps per layer and head), ``fcn`` (layer
+    norms) and ``fcpx`` (a per-head d x d output projection that is registered for
+    checkpoint compatibility but not applied in ``forward``).
     """
 
     def __init__(self, n_heads, dk, n_layers, d, n):
@@ -59,7 +58,7 @@ class ADAG(nn.Module):
                                   for _ in range(self.n_layers)])
         # layer normalisation over the whole [d, n] token block, one per layer
         self.fcn = nn.ModuleList([nn.LayerNorm([self.d, self.n]) for _ in range(self.n_layers)])
-        # legacy, unused in forward (see class docstring)
+        # per-head output projection; registered for checkpoint compatibility, not applied
         self.fcpx = nn.ModuleList([nn.Linear(self.d, self.d, bias=False) for _ in range(self.n_heads)])
 
         # zero diagonal: a variable is never its own parent
