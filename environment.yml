@@ -1,0 +1,21 @@
+# conda env create -f environment.yml && conda activate adag
+name: adag
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pytorch>=2.1
+  - pytorch-cuda=12.1        # drop this line for a CPU-only install
+  - numpy<2
+  - scipy
+  - networkx
+  - python-igraph
+  - scikit-learn
+  - tqdm
+  - pip
+  - pip:
+      - dagma>=1.1.1
+      - git+https://github.com/xunzheng/notears.git
+      # - avici>=1.0.7       # optional baseline (JAX)

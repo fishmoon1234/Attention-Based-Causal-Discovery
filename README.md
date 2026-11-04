@@ -1,0 +1,242 @@
+# ADAG: Attention-Based Pretraining for Unsupervised Amortized Causal Discovery
+
+ADAG (Attention-DAG) is a linear-transformer model for *amortized* causal discovery.
+Given observations from many domains that follow linear structural equation models (SEMs)
+`X = Aᵀ X + E`, it learns one nonlinear map `A = g(X; Θ)` from the observations of a domain
+to that domain's weighted adjacency matrix. Training is **unsupervised**: the model
+minimises the reconstruction error `‖X − A(X)ᵀ X‖²` over all training domains under an
+acyclicity constraint on every `A(X)`, enforced with the augmented Lagrangian method, so no
+ground-truth graphs are needed. Once trained, inference on a new domain is a single forward
+pass (about a millisecond), with no per-domain optimisation.
+
+This repository contains the reference implementation of the paper
+*Attention-Based Pretraining for Unsupervised Amortized Causal Discovery*: the model, the
+unsupervised (augmented Lagrangian) trainer, a supervised trainer for comparison, data
+generation for the three multi-domain settings of the paper, zero-shot evaluation, a
+baseline comparison, and a ready-to-run demo with a trained `d = 5` model.
+
+## Contents
+
+| Path | What it is |
+|---|---|
+| `adag/model.py` | The ADAG architecture (`ADAG` class): `L` linear-attention layers whose last attention matrix is the weighted adjacency estimate |
+| `adag/data.py` | Dataset generation for the `hetero`, `orderconsist` and `general` settings, and the `Shard` loader that synthesises observations on the fly |
+| `adag/utils.py` | Acyclicity constraints `h(A)`, relative-error loss, SHD / F1 / AUROC metrics |
+| `adag/training.py` | Argument groups, naming and per-epoch monitoring shared by the trainers |
+| `generate_data.py` | Command line for data generation |
+| `train_adag_alm.py` | **Unsupervised training with the augmented Lagrangian method (the method of the paper)** |
+| `train_adag_supervised.py` | Supervised training against ground-truth graphs (reference / ablation) |
+| `evaluate_adag.py` | Zero-shot evaluation of a checkpoint on held-out domains |
+| `run_baselines.py` | ADAG vs. NOTEARS, DAGMA (and optionally AVICI) on identical data, with a comparison table |
+| `demo/` | Trained `d = 5` ADAG model, the matching dataset, the comparison it produces, and `run_demo.sh` |
+| `environment.yml`, `requirements.txt` | Conda environment and pip requirements |
+
+## Installation
+
+```bash
+git clone https://github.com/naiyuyin/ADAG.git
+cd ADAG
+```
+
+The code is also included as the `ADAG/` folder of
+[fishmoon1234/Attention-Based-Causal-Discovery](https://github.com/fishmoon1234/Attention-Based-Causal-Discovery);
+all commands below are run from inside that folder in either case.
+
+**With conda (recommended):**
+
+```bash
+conda env create -f environment.yml
+conda activate adag
+```
+
+`environment.yml` installs PyTorch with CUDA 12.1; delete the `pytorch-cuda` line for a
+CPU-only environment, or pick the CUDA build that matches your driver at
+[pytorch.org](https://pytorch.org/get-started/locally/).
+
+**With pip (into an existing environment with PyTorch ≥ 2.1):**
+
+```bash
+pip install -r requirements.txt
+```
+
+Core dependencies are `torch`, `numpy`, `scipy`, `networkx`, `igraph`, `scikit-learn` and
+`tqdm`. The baselines are optional: `dagma` is on PyPI, NOTEARS is installed from
+[github.com/xunzheng/notears](https://github.com/xunzheng/notears), and AVICI
+(`pip install avici`, pulls in JAX) is only needed for `--methods avici`.
+
+Check the installation with the demo evaluation (a few seconds on a GPU, under a minute on CPU):
+
+```bash
+python evaluate_adag.py --ckpt demo/checkpoints/adag_d5_n1000_general.ckpt \
+    --data_root demo/data --level hetero --s0 1 --d 5 --n 1000
+```
+
+## Quick start: the demo
+
+`demo/` ships a trained ADAG model and the dataset it is evaluated on in the paper's
+closest setting:
+
+* `demo/checkpoints/adag_d5_n1000_general.ckpt` (6.8 MB): ADAG with `r = 1` head,
+  `k = 20`, `L = 35` layers, for `d = 5` variables and `n = 1000` samples per domain,
+  trained with the unsupervised augmented-Lagrangian procedure on *general* data
+  (every training domain an independent random DAG).
+* `demo/data/hetero/ER1_d5_M101000_seed42/` (1.8 MB): 101 000 heterogeneous domains
+  (one ER1 DAG on 5 nodes, edge weights re-drawn per domain), of which the last 1000 are
+  the held-out test domains.
+
+`bash demo/run_demo.sh` evaluates the model, runs NOTEARS and DAGMA on the *same* 1000
+test domains, and prints the comparison. Because the model was trained on general data
+and is tested on heterogeneous data, this is a zero-shot transfer across structural
+priors. Results on the 1000 test domains (mean ± std, edges thresholded at |w| ≥ 0.3):
+
+| Method | SHD | Edges | F1 | Rel. error | Time / domain |
+|---|---|---|---|---|---|
+| ADAG | 0.015 ± 0.137 | 5.00 ± 0.12 | 0.998 ± 0.017 | 0.072 ± 0.026 | 1.15 ms |
+| NOTEARS | 0.103 ± 0.500 | 5.01 ± 0.14 | 0.986 ± 0.068 | 0.060 ± 0.103 | 271.30 ms |
+| DAGMA | 0.039 ± 0.292 | 5.01 ± 0.11 | 0.994 ± 0.041 | 0.046 ± 0.071 | 954.19 ms |
+
+ADAG's time is one batched forward pass on an RTX 5090; the baselines' time is a single
+CPU core per domain. The table is regenerated by `run_baselines.py` into
+`demo/results/comparison_hetero_ER1_d5_n1000_test1000.md`.
+
+## Generating data
+
+`generate_data.py` writes one dataset ("shard") per configuration. The three settings of
+the paper are selected with `--level`:
+
+| `--level` | Structure across domains | Reference |
+|---|---|---|
+| `hetero` | all domains share one DAG, edge weights vary | Lu & Gao (2023) |
+| `orderconsist` | all domains share one topological order, edges and weights vary | Chen et al. (2021) |
+| `general` | every domain draws an independent random DAG | |
+
+```bash
+python generate_data.py --level hetero       --graph_type ER --s0 1 --d 5  --M 101000
+python generate_data.py --level orderconsist --graph_type ER --s0 2 --d 20 --M 101000
+python generate_data.py --level general      --graph_type ER --s0 4 --d 50 --M 101000
+python generate_data.py --level general --d 5 --M 101000 --noise exp     # non-Gaussian noise
+```
+
+* Graphs are Erdős–Rényi (`ER`) or scale-free (`SF`) with `s0 · d` expected edges; edge
+  weights are drawn from `U(−2, −0.5) ∪ U(0.5, 2)`; the SEM noise is Gaussian by default
+  (`exp`, `gumbel`, `uniform` are also available). `ER4` with `d = 5` is impossible
+  (20 edges on 5 nodes) and is rejected.
+* `--M` is the total number of domains. The trainers and evaluator always hold out the
+  **last 1000** (`--n_test`) as test domains, so `--M 101000` gives the paper's
+  100 000 training + 1000 test split.
+* Only the weighted adjacency matrices are stored (sparse, float32, `manifest.json` +
+  `W.npz`, a few MB per configuration). Observations are synthesised when a batch is
+  loaded from the closed form `X = Z (I − W)⁻¹` with a seeded noise draw, so the per-domain
+  sample size `n` is chosen at training / evaluation time, not at generation time, and the
+  same shard serves every `n`. See `adag/data.py`.
+* Output goes to `data/{level}/{graph_type}{s0}_d{d}_M{M}_seed{seed}/`; point the other
+  scripts at it with the same `--data_root --level --graph_type --s0 --d --M --data_seed`.
+
+## Training ADAG
+
+### Unsupervised (augmented Lagrangian) — the method of the paper
+
+```bash
+python train_adag_alm.py --data_root data --level general --graph_type ER --s0 1 --d 5 \
+    --n 1000 --M_train 100000
+```
+
+This runs Algorithm 1 of the paper:
+
+1. **Warm-up** at fixed multipliers `α = 0, ρ = 1` for `--warmup_epochs` (5000) epochs,
+   learning rate `3e-4` decayed by `0.7` every `1000` epochs (`--lr --gamma --step_size`).
+2. **Augmented Lagrangian loop**: repeat `--inner_epochs` (100) epochs at `--inner_lr`
+   (`1e-4`); if the mean acyclicity violation `h(A)` on the training domains did not fall to
+   `--c` (¼) of its previous value, multiply `ρ` by 10 and repeat; then `α ← α + ρ h`.
+   Stop when `h < --h_tol` (`1e-5`) or after `--max_outer` iterations.
+
+The objective per batch is `reconstruction + α·mean h(A) + ρ/2·mean h(A)² + λ₁‖A‖₁`
+with `h(A) = tr[(I + A∘A/d)^d] − d` (`--acyclicity logdet` switches to the DAGMA
+log-det form) and `--lamb_l1 0.02`. No ground-truth graph enters the objective; the
+ground-truth relative error that is printed each epoch is for monitoring only.
+
+Outputs in `--out_dir` (default `checkpoints/`), with `{name}` built from the arguments:
+`{name}_init.ckpt`, `{name}_warmup.ckpt`, `{name}_alm.ckpt` (the final ALM iterate),
+`{name}_alm_best.ckpt` (lowest test reconstruction loss, or lowest ground-truth error with
+`--select_by rel_error`) and `{name}_alm_log.csv` with the per-epoch curves.
+`--stage warmup` / `--stage alm --init_ckpt …` run the two stages separately.
+
+### Supervised (reference)
+
+```bash
+python train_adag_supervised.py --data_root data --level hetero --s0 1 --d 5 --n 1000 \
+    --M_train 100000 --epochs 1000
+```
+
+Minimises `RelErr(A(X), W) + λ_rec · reconstruction` against the ground-truth matrices
+`W` of the training domains (optionally plus the acyclicity penalty with `--alpha --rho`).
+Same architecture, data pipeline and checkpoint format as the unsupervised trainer; the
+checkpoint with the lowest test relative error is saved as `{name}_supervised.ckpt`. This
+is not the method of the paper; it is a natural reference point and a strong
+initialisation for the unsupervised trainer (`--init_ckpt`).
+
+### Practical notes
+
+* Defaults are the paper's: `--n_heads 1 --dk 20 --n_layers 35 --batch_size 100`, Adam
+  with weight decay `1e-6`. Per-epoch monitoring uses the first `--eval_train_domains`
+  (1000) training domains and all test domains.
+* From a random initialisation the first epochs show very large `h(A)` and
+  reconstruction values (the untrained attention output is far from a sparse DAG); they
+  shrink by orders of magnitude within the first few thousand optimiser steps. This is
+  expected.
+* A trained model is tied to the `n` it was trained with (`W^Q, W^K ∈ ℝ^{n×k}`). To apply it
+  to domains with fewer samples, `evaluate_adag.py --resample_to_n n_available` pads each
+  domain to `n` by resampling its observations with replacement (paper, Appendix A).
+* `--resample_noise` draws fresh observations from the same SEMs every epoch instead of a
+  fixed dataset; `--M_train` controls the number of training domains (paper ablation:
+  ≥ 70 000 for `d = 5`).
+* On an RTX 5090 one epoch over 100 000 domains at `d = 5, n = 1000` takes about 13 s.
+
+## Evaluating a trained model
+
+```bash
+python evaluate_adag.py --ckpt checkpoints/<name>_alm.ckpt \
+    --data_root data --level general --s0 1 --d 5 --n 1000 --out_dir results/adag
+```
+
+Applies the model once to each of the held-out domains and reports, per domain and on
+average, SHD, number of edges, precision, recall, F1, AUROC and the relative error of the
+weights, at the standard threshold `|w| ≥ 0.3` (`--w_threshold`). The architecture flags
+must match the checkpoint. Outputs: `A_est_*.npy` (raw estimates), `metrics_*.csv`,
+`summary_*.json`.
+
+## Baselines
+
+```bash
+python run_baselines.py --methods adag notears dagma --ckpt <checkpoint> \
+    --data_root data --level general --s0 1 --d 5 --n 1000
+```
+
+Every method is scored on exactly the same observations with the same metric code, so the
+rows are comparable: ADAG (zero-shot, GPU), NOTEARS and DAGMA (linear, L2 loss,
+`--lambda1 0.02`, one CPU process per domain), and AVICI (pretrained `scm-v0`, edge
+probabilities cut at 0.5). `--limit K` tries the first `K` test domains.
+
+## Conventions worth knowing
+
+* `ADAG.forward(x)` takes `x` of shape `[batch, d, n]` (variables as tokens) and returns
+  `(x_hat, A)` with `x_hat = A x`. `A[i, j]` is the weight of `j → i`; every script
+  converts to the NOTEARS / DAGMA convention `W = Aᵀ` (`W[i, j] ≠ 0 ⇔ i → j`) before
+  comparing with the ground truth. `ADAG.estimate(x)` returns `W` directly.
+* Checkpoints are plain `state_dict`s loadable with `ADAG.from_checkpoint`. The parameter
+  names (`fcq`, `fck`, `fcn`, `fcpx`) are those of the original implementation; `fcpx` is a
+  legacy projection that the paper's formulation does not use and that does not enter
+  the forward pass.
+* Datasets are reproducible from their `manifest.json`; `Shard(path, n).batch(idx)` returns
+  `(X [B, n, d], W [B, d, d])`.
+
+## Citation
+
+```bibtex
+@article{adag2026,
+  title   = {Attention-Based Pretraining for Unsupervised Amortized Causal Discovery},
+  author  = {Yin, Naiyu and others},
+  year    = {2026},
+  note    = {Under review}
+}
+```

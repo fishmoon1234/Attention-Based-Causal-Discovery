@@ -1,0 +1,13 @@
+# Core (training, evaluation, data generation)
+torch>=2.1
+numpy>=1.24,<2.0
+scipy>=1.10
+networkx>=3.0
+igraph>=0.10
+scikit-learn>=1.3
+tqdm>=4.65
+
+# Baselines used by run_baselines.py (optional; install the ones you want to compare with)
+dagma>=1.1.1
+notears @ git+https://github.com/xunzheng/notears.git
+# avici>=1.0.7          # pulls in JAX; see README
